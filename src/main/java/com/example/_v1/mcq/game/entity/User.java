@@ -1,4 +1,4 @@
-package com.example._v1.mcq.game.attributes;
+package com.example._v1.mcq.game.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

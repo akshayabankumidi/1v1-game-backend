@@ -1,6 +1,7 @@
-package com.example._v1.mcq.game.attributes;
+package com.example._v1.mcq.game.entity;
 import com.example._v1.mcq.game.DataTypes.Custom.Options;
 import com.example._v1.mcq.game.DataTypes.Enums.Difficulty;
+import com.example._v1.mcq.game.DataTypes.Enums.Visibility;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -27,5 +28,8 @@ public class Mcq {
 
     private Difficulty difficulty;
 
+    private Visibility visibility = Visibility.Private;
+
+    private String topic = "Miscellaneous";
 
 }

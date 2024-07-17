@@ -1,6 +1,6 @@
 package com.example._v1.mcq.game.respository;
 
-import com.example._v1.mcq.game.attributes.User;
+import com.example._v1.mcq.game.entity.User;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.Optional;

@@ -1,6 +1,6 @@
 package com.example._v1.mcq.game.utils;
 
-import com.example._v1.mcq.game.attributes.Mcq;
+import com.example._v1.mcq.game.entity.Mcq;
 
 public class McqUpdateUtil {
     public static void updateNonNullFields(Mcq source, Mcq target) {
@@ -15,6 +15,12 @@ public class McqUpdateUtil {
         }
         if (source.getDifficulty() != null) {
             target.setDifficulty(source.getDifficulty());
+        }
+        if (source.getVisibility() != null) {
+            target.setVisibility(source.getVisibility());
+        }
+        if(source.getTopic()!= null){
+            target.setTopic(source.getTopic());
         }
 
     }
