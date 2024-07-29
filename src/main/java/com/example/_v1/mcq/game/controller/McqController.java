@@ -1,8 +1,8 @@
 package com.example._v1.mcq.game.controller;
 
-import com.example._v1.mcq.game.entity.Mcq;
-
 import com.example._v1.mcq.game.DTO.McqDeleteRequest;
+
+import com.example._v1.mcq.game.entity.Mcq;
 import com.example._v1.mcq.game.services.McqService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
