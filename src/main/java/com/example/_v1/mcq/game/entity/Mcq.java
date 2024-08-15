@@ -32,4 +32,13 @@ public class Mcq {
 
     private String topic = "Miscellaneous";
 
+    private String gameId; // New field: the ID of the game this MCQ belongs to
+
+    public boolean isCorrectAnswer(String answer) {
+        if (correctOptions == null || correctOptions.isEmpty()) {
+            return false;
+        }
+        return correctOptions.stream()
+                .anyMatch(option -> String.valueOf(option.getOption()).equals(answer));
+    }
 }

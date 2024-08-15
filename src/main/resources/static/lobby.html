@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Lobby</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a202c;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #2d3748;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            margin-top: 0;
+        }
+        button {
+            background-color: #48bb78;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #38a169;
+        }
+        .game-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .question-option {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background-color: #4a5568;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="app">
+    <div id="lobby">
+        <h2>Lobby</h2>
+        <div id="gamesList"></div>
+    </div>
+    <div id="game" style="display: none;">
+        <h2>Game <span id="gameId"></span></h2>
+        <div id="question"></div>
+        <div id="waitingMessage" style="display: none;">Waiting for other player to answer...</div>
+    </div>
+</div>
+
+<script>
+    const lobbyElement = document.getElementById('lobby');
+    const gameElement = document.getElementById('game');
+    const gamesListElement = document.getElementById('gamesList');
+    const gameIdElement = document.getElementById('gameId');
+    const questionElement = document.getElementById('question');
+    const waitingMessageElement = document.getElementById('waitingMessage');
+
+    let stompClient = null;
+    let currentGame = null;
+    let playerId = null;
+    let currentQuestion = null;
+
+    function generatePlayerId() {
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < 8; i++) {
+            result += characters.charAt(Math.floor(Math.random() * characters.length));
+        }
+        return result;
+    }
+
+    function connectWebSocket() {
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, onConnected, onError);
+    }
+
+    function onConnected() {
+        console.log('Connected to WebSocket');
+        stompClient.subscribe('/user/queue/game', onGameMessage);
+
+        if (!playerId) {
+            playerId = generatePlayerId();
+            console.log('Generated player ID:', playerId);
+        }
+
+        fetchGames();
+    }
+
+    function onError(error) {
+        console.error('WebSocket Error:', error);
+    }
+
+    function fetchGames() {
+        fetch('/api/game/getAllGamesPL2')
+            .then(response => response.json())
+            .then(games => {
+                gamesListElement.innerHTML = '';
+                games.forEach(game => {
+                    const gameItem = document.createElement('div');
+                    gameItem.className = 'game-item';
+                    gameItem.innerHTML = `
+                        <span>${game.id}</span>
+                        <button>join</button>
+                    `;
+                    const joinButton = gameItem.querySelector('button');
+                    joinButton.addEventListener('click', () => joinGame(game.id));
+                    gamesListElement.appendChild(gameItem);
+                });
+            })
+            .catch(error => console.error('Error fetching games:', error));
+    }
+
+    function joinGame(gameId) {
+        if (playerId) {
+            stompClient.send("/app/game/join", {}, JSON.stringify({ gameId, playerId }));
+        } else {
+            console.error('No player ID generated');
+            showError('Unable to join game. Please refresh the page and try again.');
+        }
+    }
+
+    function onGameMessage(message) {
+        console.log('Received message:', message);
+        let gameData;
+        try {
+            gameData = JSON.parse(message.body);
+        } catch (error) {
+            console.error('Error parsing message:', error);
+            return;
+        }
+        console.log('Parsed game data:', gameData);
+
+        switch(gameData.type) {
+            case 'WAITING_FOR_PLAYERS':
+                showWaitingScreen(gameData.payload);
+                break;
+            case 'GAME_STARTED':
+                showGame(gameData.payload);
+                break;
+            case 'QUESTION':
+                showQuestion(gameData.payload);
+                break;
+            case 'GAME_OVER':
+                showGameOver(gameData.payload);
+                break;
+            case 'ERROR':
+                showError(gameData.payload);
+                break;
+            default:
+                console.log('Unknown message type:', gameData.type);
+        }
+    }
+
+    function showWaitingScreen(gameData) {
+        lobbyElement.style.display = 'none';
+        gameElement.style.display = 'block';
+        gameIdElement.textContent = gameData.game.id;
+        questionElement.innerHTML = '<p>Waiting for other player to join...</p>';
+        waitingMessageElement.style.display = 'none';
+    }
+
+    function showGame(gameData) {
+        currentGame = gameData.game;
+        console.log('Game started:', currentGame);
+        if (gameData.questions && gameData.questions.length > 0) {
+            showQuestion(gameData.questions[0]);
+        } else {
+            console.error('No questions available for the game');
+        }
+    }
+
+    function showQuestion(question) {
+        console.log('Showing question:', question);
+        if (!question || typeof question.question !== 'string' || !Array.isArray(question.listOfOptions)) {
+            console.error('Invalid question data:', question);
+            return;
+        }
+        currentQuestion = question;
+        console.log('came this far');
+        questionElement.innerHTML = `
+            <p>${escapeHtml(question.question)}</p>
+            ${question.listOfOptions.map((option, index) => `
+                <button class="question-option" onclick="submitAnswer('${escapeHtml(option)}', '${question.id}')">${escapeHtml(option)}</button>
+            `).join('')}
+        `;
+        console.log('error in question elemtn ig');
+        if (question.difficulty) {
+            questionElement.innerHTML += `<p>Difficulty: ${question.difficulty}</p>`;
+        }
+        if (question.topic) {
+            questionElement.innerHTML += `<p>Topic: ${question.topic}</p>`;
+        }
+        waitingMessageElement.style.display = 'none';
+    }
+
+    function showGameOver(game) {
+        questionElement.innerHTML = '<h3>Game Over!</h3>';
+        if (game.winners && game.winners.length > 0) {
+            questionElement.innerHTML += `<p>Winner(s): ${game.winners.join(', ')}</p>`;
+        }
+        questionElement.innerHTML += '<p>Final Scores:</p>';
+        for (let [pid, score] of Object.entries(game.scores)) {
+            questionElement.innerHTML += `<p>${pid === playerId ? 'You' : 'Opponent'}: ${score}</p>`;
+        }
+        waitingMessageElement.style.display = 'none';
+    }
+
+    function showError(errorMessage) {
+        console.error('Error:', errorMessage);
+        questionElement.innerHTML = `<p class="error">Error: ${escapeHtml(errorMessage)}</p>`;
+        waitingMessageElement.style.display = 'none';
+    }
+
+    function submitAnswer(selectedOption, questionId) {
+        if (currentGame && playerId) {
+            stompClient.send("/app/game/answer", {}, JSON.stringify({
+                gameId: currentGame.id,
+                playerId: playerId,
+                questionId: questionId,
+                answer: selectedOption
+            }));
+            waitingMessageElement.style.display = 'block';
+            questionElement.innerHTML = '<p>Answer submitted. Waiting for other player...</p>';
+        } else {
+            showError('Unable to submit answer. Game or player information is missing.');
+        }
+    }
+
+    function escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    connectWebSocket();
+</script>
+</body>
+</html>

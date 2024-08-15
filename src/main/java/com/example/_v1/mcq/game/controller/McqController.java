@@ -1,13 +1,16 @@
 package com.example._v1.mcq.game.controller;
 
-import com.example._v1.mcq.game.DTO.McqDeleteRequest;
+import com.example._v1.mcq.game.DTO.DeleteRequest;
 
+import com.example._v1.mcq.game.DataTypes.Custom.DeleteResult;
 import com.example._v1.mcq.game.entity.Mcq;
 import com.example._v1.mcq.game.services.McqService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 
 @RestController
@@ -41,9 +44,9 @@ public class McqController {
     }
 
     @DeleteMapping("/delete")
-    public ResponseEntity<?> deleteMcqs(@RequestBody McqDeleteRequest deleteRequest) {
+    public ResponseEntity<?> deleteMcqs(@RequestBody DeleteRequest deleteRequest) {
         try {
-            McqService.DeleteResult result = mcqService.deleteMcqs(deleteRequest.getIds());
+           DeleteResult result = mcqService.deleteMcqs(deleteRequest.getIds());
             StringBuilder responseMessage = new StringBuilder("Operation completed. ");
             if (!result.deletedIds.isEmpty()) {
                 responseMessage.append("Deleted MCQs with ids: ").append(result.deletedIds).append(". ");

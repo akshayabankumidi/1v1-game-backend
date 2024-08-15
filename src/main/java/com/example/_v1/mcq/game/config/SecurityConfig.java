@@ -1,4 +1,4 @@
-package com.example._v1.mcq.game;
+package com.example._v1.mcq.game.config;
 
 import com.example._v1.mcq.game.filter.JwtRequestFilter;
 import com.example._v1.mcq.game.services.CustomUserDetailsService;
@@ -41,8 +41,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/login", "/api/register").permitAll() // Allow unauthenticated access to login and register
-                        .anyRequest().authenticated() // All other requests require authentication
+                        .requestMatchers("/api/login", "/api/register","/api/**").permitAll() // Allow unauthenticated access to login and register
+                        .requestMatchers("/", "/lobby.html", "/js/**", "/css/**", "/images/**").permitAll() // Allow static resources
+                        .requestMatchers("/ws/**").permitAll() // Allow WebSocket connections
+//                        .anyRequest().authenticated() // All other requests require authentication
                 )
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
         log.info("JWT filter added to the filter chain");

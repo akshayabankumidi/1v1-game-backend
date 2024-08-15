@@ -1,5 +1,7 @@
 package com.example._v1.mcq.game.services;
 
+import com.example._v1.mcq.game.DataTypes.Custom.DeleteResult;
+import com.example._v1.mcq.game.entity.Game;
 import com.example._v1.mcq.game.entity.Mcq;
 import com.example._v1.mcq.game.respository.McqRepo;
 import com.example._v1.mcq.game.utils.McqUpdateUtil;
@@ -33,6 +35,7 @@ public class McqService {
 
     public DeleteResult deleteMcqs(List<String> ids) {
         log.info("Deleting MCQs with ids: {}", ids);
+
         List<String> deletedIds = new ArrayList<>();
         List<String> notFoundIds = new ArrayList<>();
 
@@ -48,13 +51,15 @@ public class McqService {
         return new DeleteResult(deletedIds, notFoundIds);
     }
 
-    public static class DeleteResult {
-        public final List<String> deletedIds;
-        public final List<String> notFoundIds;
-
-        public DeleteResult(List<String> deletedIds, List<String> notFoundIds) {
-            this.deletedIds = deletedIds;
-            this.notFoundIds = notFoundIds;
-        }
+    public Mcq getMcqById(String id) {
+        return mcqRepo.findById(id).orElse(null);
     }
+
+    public List<Mcq> getMcqsByGameId(String gameId) {
+        List<Mcq> mcqs = mcqRepo.findByGameId(gameId);
+        log.info("Found {} MCQs for game {}", mcqs.size(), gameId);
+        return mcqs;
+    }
+
+
 }
