@@ -27,65 +27,67 @@ import java.util.List;
 @RequestMapping("/api/game")
 public class GameController {
 
- private final GameService gameService;
- private final McqService mcqService;
- private final SimpMessagingTemplate messagingTemplate;
+    private final GameService gameService;
+    private final McqService mcqService;
+    private final SimpMessagingTemplate messagingTemplate;
+
     @PostMapping("/add")
     public ResponseEntity<?> addGame(@RequestBody Game game) {
-        try{
+        try {
             Game savedGame = gameService.addGame(game);
             return ResponseEntity.ok(savedGame);
-        } catch(Exception e){
-          return ResponseEntity.badRequest().body(e.getMessage());
+        } catch(Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-
     }
 
     @PatchMapping("/modify/{id}")
-    public ResponseEntity<?> modifyGame(@PathVariable String id,@RequestBody Game game) {
-        try{
-            return gameService.modifyGame(id,game)
+    public ResponseEntity<?> modifyGame(@PathVariable String id, @RequestBody Game game) {
+        try {
+            return gameService.modifyGame(id, game)
                     .map(ResponseEntity::ok)
                     .orElseGet(() -> ResponseEntity.notFound().build());
-        } catch(Exception e){
+        } catch(Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
     @DeleteMapping("/delete")
     public ResponseEntity<?> deleteGame(@RequestBody DeleteRequest deleteRequest) {
-        try{
+        try {
             DeleteResult result = gameService.deleteGames(deleteRequest.getIds());
             StringBuilder responseMessage = new StringBuilder("Operation completed");
-            if(!result.deletedIds.isEmpty()){
+            if(!result.deletedIds.isEmpty()) {
                 responseMessage.append(" deleted ids: ").append(result.deletedIds).append(".");
             }
-            if(!result.notFoundIds.isEmpty()){
+            if(!result.notFoundIds.isEmpty()) {
                 responseMessage.append(" not found ids: ").append(result.notFoundIds).append(".");
             }
             return ResponseEntity.ok(responseMessage.toString());
-        } catch(Exception e){
+        } catch(Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
-    @GetMapping("/getAllGamesPL2") // participant len <2
+    @GetMapping("/getAllGamesPL2")
     public ResponseEntity<?> getAllGamesPL2() {
-        try{
+        try {
             return ResponseEntity.ok(gameService.getAllGamesParticpntLessThan2());
-        } catch(Exception e){
+        } catch(Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
     @MessageMapping("/game/join")
     @SendToUser("/queue/game")
     public GameMessage joinGame(GameRequest gameRequest) {
+        log.info("Join game request received for game: {}, player: {}", gameRequest.getGameId(), gameRequest.getPlayerId());
         Game game = gameService.getGame(gameRequest.getGameId());
         if (game == null) {
+            log.error("Game not found: {}", gameRequest.getGameId());
             return new GameMessage("ERROR", "Game not found");
         }
 
-        // Add the player to the game's participants
         if (game.getParticipants() == null) {
             game.setParticipants(new ArrayList<>());
         }
@@ -94,36 +96,41 @@ public class GameController {
         }
         game = gameService.updateGame(game);
 
-        GameMessage responseMessage;
-          log.info(String.valueOf(game));
+        log.info("Updated game after join: {}", game);
+
         if (game.getParticipants().size() == 2) {
-            // Two players have joined, start the game
             game.setStatus(Status.InProgress);
             game = gameService.updateGame(game);
 
             List<Mcq> mcqs = mcqService.getMcqsByGameId(game.getId());
-            Mcq firstQuestion = mcqs.get(0);  // Assuming the first question is the starting question
-
+            Mcq firstQuestion = mcqs.get(0);
+            log.info(firstQuestion.toString());
             GameData gameData = new GameData(game, mcqs);
-            responseMessage = new GameMessage("GAME_STARTED", gameData);
+            GameMessage gameStartedMessage = new GameMessage("GAME_STARTED", gameData);
 
-            // Send the first question to both players
+            game.getParticipants().forEach(playerId -> {
+                messagingTemplate.convertAndSendToUser(playerId, "/queue/game", gameStartedMessage);
+                log.info("Sent GAME_STARTED message to player: {}", playerId);
+            });
+
             GameMessage questionMessage = new GameMessage("QUESTION", firstQuestion);
-            game.getParticipants().forEach(playerId ->
-                    messagingTemplate.convertAndSendToUser(playerId, "/queue/game", questionMessage));
+            game.getParticipants().forEach(playerId -> {
+                messagingTemplate.convertAndSendToUser(playerId, "/queue/game", questionMessage);
+                log.info("Sent QUESTION message to player: {}", playerId);
+            });
+
+            return gameStartedMessage;
         } else {
-            // Waiting for more players
             List<Mcq> mcqs = mcqService.getMcqsByGameId(game.getId());
             GameData gameData = new GameData(game, mcqs);
-            responseMessage = new GameMessage("WAITING_FOR_PLAYERS", gameData);
+            return new GameMessage("WAITING_FOR_PLAYERS", gameData);
         }
-
-        return responseMessage;
     }
 
     @MessageMapping("/game/answer")
     @SendToUser("/queue/game")
     public GameMessage submitAnswer(AnswerRequest answerRequest) {
+        log.info("Answer received: {}", answerRequest);
         Game updatedGame = gameService.processAnswer(
                 answerRequest.getGameId(),
                 answerRequest.getPlayerId(),
@@ -132,6 +139,7 @@ public class GameController {
         );
 
         if (updatedGame == null) {
+            log.error("Game not found for answer: {}", answerRequest.getGameId());
             return new GameMessage("ERROR", "Game not found");
         }
 
@@ -141,9 +149,11 @@ public class GameController {
     @MessageMapping("/game/nextQuestion")
     @SendToUser("/queue/game")
     public GameMessage nextQuestion(GameRequest gameRequest) {
+        log.info("Next question request received for game: {}", gameRequest.getGameId());
         Game game = gameService.getGame(gameRequest.getGameId());
 
         if (game == null) {
+            log.error("Game not found: {}", gameRequest.getGameId());
             return new GameMessage("ERROR", "Game not found");
         }
 
@@ -152,15 +162,33 @@ public class GameController {
 
     private GameMessage getNextGameState(Game game) {
         if (game.getStatus() == Status.Completed) {
-            return new GameMessage("GAME_OVER", game);
+            log.info("Game over: {}", game.getId());
+            GameMessage gameOverMessage = new GameMessage("GAME_OVER", game);
+            game.getParticipants().forEach(playerId -> {
+                messagingTemplate.convertAndSendToUser(playerId, "/queue/game", gameOverMessage);
+                log.info("Sent GAME_OVER message to player: {}", playerId);
+            });
+            return gameOverMessage;
         } else {
             Mcq nextQuestion = gameService.getNextQuestion(game.getId());
             if (nextQuestion != null) {
-                return new GameMessage("QUESTION", nextQuestion);
+                log.info("Next question for game {}: {}", game.getId(), nextQuestion.getId());
+                GameMessage questionMessage = new GameMessage("QUESTION", nextQuestion);
+                game.getParticipants().forEach(playerId -> {
+                    messagingTemplate.convertAndSendToUser(playerId, "/queue/game", questionMessage);
+                    log.info("Sent QUESTION message to player: {}", playerId);
+                });
+                return questionMessage;
             } else {
+                log.info("No more questions, game over: {}", game.getId());
                 game.setStatus(Status.Completed);
                 gameService.updateGame(game);
-                return new GameMessage("GAME_OVER", game);
+                GameMessage gameOverMessage = new GameMessage("GAME_OVER", game);
+                game.getParticipants().forEach(playerId -> {
+                    messagingTemplate.convertAndSendToUser(playerId, "/queue/game", gameOverMessage);
+                    log.info("Sent GAME_OVER message to player: {}", playerId);
+                });
+                return gameOverMessage;
             }
         }
     }

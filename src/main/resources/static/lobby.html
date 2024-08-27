@@ -80,6 +80,10 @@
     let playerId = null;
     let currentQuestion = null;
 
+    function debug(message) {
+        console.log(`[DEBUG] ${new Date().toISOString()}: ${message}`);
+    }
+
     function generatePlayerId() {
         const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
         let result = '';
@@ -96,19 +100,19 @@
     }
 
     function onConnected() {
-        console.log('Connected to WebSocket');
+        debug('Connected to WebSocket');
         stompClient.subscribe('/user/queue/game', onGameMessage);
 
         if (!playerId) {
             playerId = generatePlayerId();
-            console.log('Generated player ID:', playerId);
+            debug(`Generated player ID: ${playerId}`);
         }
 
         fetchGames();
     }
 
     function onError(error) {
-        console.error('WebSocket Error:', error);
+        debug(`WebSocket Error: ${error}`);
     }
 
     function fetchGames() {
@@ -127,52 +131,61 @@
                     joinButton.addEventListener('click', () => joinGame(game.id));
                     gamesListElement.appendChild(gameItem);
                 });
+                debug(`Fetched ${games.length} games`);
             })
-            .catch(error => console.error('Error fetching games:', error));
+            .catch(error => debug(`Error fetching games: ${error}`));
     }
 
     function joinGame(gameId) {
+        console.log("playerId: "+playerId);
         if (playerId) {
             stompClient.send("/app/game/join", {}, JSON.stringify({ gameId, playerId }));
+            debug(`Joining game: ${gameId}`);
         } else {
-            console.error('No player ID generated');
+            debug('No player ID generated');
             showError('Unable to join game. Please refresh the page and try again.');
         }
     }
 
     function onGameMessage(message) {
-        console.log('Received message:', message);
+        debug(`Received message: ${message.body}`);
         let gameData;
         try {
             gameData = JSON.parse(message.body);
         } catch (error) {
-            console.error('Error parsing message:', error);
+            debug(`Error parsing message: ${error}`);
             return;
         }
-        console.log('Parsed game data:', gameData);
+        debug(`Parsed game data: ${JSON.stringify(gameData)}`);
 
         switch(gameData.type) {
             case 'WAITING_FOR_PLAYERS':
+                debug('Handling: Waiting for players');
                 showWaitingScreen(gameData.payload);
                 break;
             case 'GAME_STARTED':
+                debug('Handling: Game started');
                 showGame(gameData.payload);
                 break;
             case 'QUESTION':
+                debug('Handling: Received question');
                 showQuestion(gameData.payload);
                 break;
             case 'GAME_OVER':
+                debug('Handling: Game over');
                 showGameOver(gameData.payload);
                 break;
             case 'ERROR':
+                debug(`Handling: Received error - ${gameData.payload}`);
                 showError(gameData.payload);
                 break;
             default:
-                console.log('Unknown message type:', gameData.type);
+                debug(`Unknown message type: ${gameData.type}`);
         }
     }
 
     function showWaitingScreen(gameData) {
+        debug('Showing waiting screen');
         lobbyElement.style.display = 'none';
         gameElement.style.display = 'block';
         gameIdElement.textContent = gameData.game.id;
@@ -181,58 +194,45 @@
     }
 
     function showGame(gameData) {
+        debug(`Showing game. Game ID: ${gameData.game.id}`);
         currentGame = gameData.game;
-        console.log('Game started:', currentGame);
-        if (gameData.questions && gameData.questions.length > 0) {
-            showQuestion(gameData.questions[0]);
-        } else {
-            console.error('No questions available for the game');
-        }
+        lobbyElement.style.display = 'none';
+        gameElement.style.display = 'block';
+        gameIdElement.textContent = currentGame.id;
+        questionElement.innerHTML = '<p>Game started. Waiting for the first question...</p>';
     }
 
     function showQuestion(question) {
-        console.log('Showing question:', question);
+        debug(`Showing question. Question ID: ${question.id}`);
         if (!question || typeof question.question !== 'string' || !Array.isArray(question.listOfOptions)) {
-            console.error('Invalid question data:', question);
+            debug(`Invalid question data: ${JSON.stringify(question)}`);
+            showError('Invalid question data received');
             return;
         }
         currentQuestion = question;
-        console.log('came this far');
-        questionElement.innerHTML = `
+
+        let questionHtml = `
             <p>${escapeHtml(question.question)}</p>
             ${question.listOfOptions.map((option, index) => `
                 <button class="question-option" onclick="submitAnswer('${escapeHtml(option)}', '${question.id}')">${escapeHtml(option)}</button>
             `).join('')}
         `;
-        console.log('error in question elemtn ig');
+
         if (question.difficulty) {
-            questionElement.innerHTML += `<p>Difficulty: ${question.difficulty}</p>`;
+            questionHtml += `<p>Difficulty: ${question.difficulty}</p>`;
         }
         if (question.topic) {
-            questionElement.innerHTML += `<p>Topic: ${question.topic}</p>`;
+            questionHtml += `<p>Topic: ${question.topic}</p>`;
         }
-        waitingMessageElement.style.display = 'none';
-    }
 
-    function showGameOver(game) {
-        questionElement.innerHTML = '<h3>Game Over!</h3>';
-        if (game.winners && game.winners.length > 0) {
-            questionElement.innerHTML += `<p>Winner(s): ${game.winners.join(', ')}</p>`;
-        }
-        questionElement.innerHTML += '<p>Final Scores:</p>';
-        for (let [pid, score] of Object.entries(game.scores)) {
-            questionElement.innerHTML += `<p>${pid === playerId ? 'You' : 'Opponent'}: ${score}</p>`;
-        }
+        questionElement.innerHTML = questionHtml;
         waitingMessageElement.style.display = 'none';
-    }
-
-    function showError(errorMessage) {
-        console.error('Error:', errorMessage);
-        questionElement.innerHTML = `<p class="error">Error: ${escapeHtml(errorMessage)}</p>`;
-        waitingMessageElement.style.display = 'none';
+        gameElement.style.display = 'block';
+        lobbyElement.style.display = 'none';
     }
 
     function submitAnswer(selectedOption, questionId) {
+        debug(`Submitting answer: ${selectedOption} for question: ${questionId}`);
         if (currentGame && playerId) {
             stompClient.send("/app/game/answer", {}, JSON.stringify({
                 gameId: currentGame.id,
@@ -245,6 +245,25 @@
         } else {
             showError('Unable to submit answer. Game or player information is missing.');
         }
+    }
+
+    function showGameOver(game) {
+        debug(`Game over. Game ID: ${game.id}`);
+        questionElement.innerHTML = '<h3>Game Over!</h3>';
+        if (game.winners && game.winners.length > 0) {
+            questionElement.innerHTML += `<p>Winner(s): ${game.winners.join(', ')}</p>`;
+        }
+        questionElement.innerHTML += '<p>Final Scores:</p>';
+        for (let [pid, score] of Object.entries(game.scores)) {
+            questionElement.innerHTML += `<p>${pid === playerId ? 'You' : 'Opponent'}: ${score}</p>`;
+        }
+        waitingMessageElement.style.display = 'none';
+    }
+
+    function showError(errorMessage) {
+        debug(`Showing error: ${errorMessage}`);
+        questionElement.innerHTML = `<p class="error">Error: ${escapeHtml(errorMessage)}</p>`;
+        waitingMessageElement.style.display = 'none';
     }
 
     function escapeHtml(unsafe) {
