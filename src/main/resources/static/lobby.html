@@ -77,9 +77,9 @@
 
     let stompClient = null;
     let currentGame = null;
-    let playerId = null;
+    let playerId = generatePlayerId();
     let currentQuestion = null;
-
+    debug(`Generated player ID: ${playerId}`);
     function debug(message) {
         console.log(`[DEBUG] ${new Date().toISOString()}: ${message}`);
     }
@@ -94,20 +94,14 @@
     }
 
     function connectWebSocket() {
-        const socket = new SockJS('/ws');
+        const socket = new SockJS('/ws?username=' + encodeURIComponent(playerId));
         stompClient = Stomp.over(socket);
         stompClient.connect({}, onConnected, onError);
     }
 
     function onConnected() {
         debug('Connected to WebSocket');
-        stompClient.subscribe('/user/queue/game', onGameMessage);
-
-        if (!playerId) {
-            playerId = generatePlayerId();
-            debug(`Generated player ID: ${playerId}`);
-        }
-
+         stompClient.subscribe('/user/queue/game', onGameMessage);
         fetchGames();
     }
 
@@ -119,6 +113,7 @@
         fetch('/api/game/getAllGamesPL2')
             .then(response => response.json())
             .then(games => {
+                console.log("games: "+games);
                 gamesListElement.innerHTML = '';
                 games.forEach(game => {
                     const gameItem = document.createElement('div');
@@ -148,6 +143,7 @@
     }
 
     function onGameMessage(message) {
+
         debug(`Received message: ${message.body}`);
         let gameData;
         try {
@@ -175,6 +171,10 @@
                 debug('Handling: Game over');
                 showGameOver(gameData.payload);
                 break;
+            case 'Opponent is Still Playing':
+                debug('Handling:Waiting for opponent to finish game');
+                showWaiting(gameData.payload);
+                break;
             case 'ERROR':
                 debug(`Handling: Received error - ${gameData.payload}`);
                 showError(gameData.payload);
@@ -192,7 +192,10 @@
         questionElement.innerHTML = '<p>Waiting for other player to join...</p>';
         waitingMessageElement.style.display = 'none';
     }
-
+    function showWaiting(gameData){
+        debug("showing waiting for opponent to finsh game screen");
+        questionElement.innerHTML = '<p>Waiting for Opponent to finish game...</p>';
+    }
     function showGame(gameData) {
         debug(`Showing game. Game ID: ${gameData.game.id}`);
         currentGame = gameData.game;
@@ -246,17 +249,30 @@
             showError('Unable to submit answer. Game or player information is missing.');
         }
     }
-
     function showGameOver(game) {
         debug(`Game over. Game ID: ${game.id}`);
         questionElement.innerHTML = '<h3>Game Over!</h3>';
-        if (game.winners && game.winners.length > 0) {
-            questionElement.innerHTML += `<p>Winner(s): ${game.winners.join(', ')}</p>`;
-        }
+
+        // Display final scores
         questionElement.innerHTML += '<p>Final Scores:</p>';
-        for (let [pid, score] of Object.entries(game.scores)) {
-            questionElement.innerHTML += `<p>${pid === playerId ? 'You' : 'Opponent'}: ${score}</p>`;
+        game.participants.forEach(participant => {
+            const isCurrentPlayer = participant.participantId === playerId;
+            questionElement.innerHTML += `
+                <p>${isCurrentPlayer ? 'You' : 'Opponent'}: ${participant.scores}</p>
+            `;
+        });
+
+        // Determine winner(s)
+        const highestScore = Math.max(...game.participants.map(p => p.scores));
+        const winners = game.participants.filter(p => p.scores === highestScore);
+
+        if (winners.length > 0) {
+            const winnerNames = winners.map(w => w.participantId === playerId ? 'You' : 'Opponent').join(', ');
+            questionElement.innerHTML += `<p>Winner(s): ${winnerNames}</p>`;
+        } else {
+            questionElement.innerHTML += '<p>No winners.</p>';
         }
+
         waitingMessageElement.style.display = 'none';
     }
 

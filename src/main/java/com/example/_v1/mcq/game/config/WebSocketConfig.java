@@ -10,30 +10,21 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Slf4j
 @Configuration
 @EnableWebSocketMessageBroker
-public class WebSocketConfig  implements WebSocketMessageBrokerConfigurer{
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         log.info("Registering STOMP endpoints...");
-        //.withSockJs() if we have frontend
-        registry.addEndpoint("/ws").setAllowedOrigins("http://localhost:8080").withSockJS();
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins("http://localhost:8080")
+                .setHandshakeHandler(new CustomHandshakeHandler())
+                .withSockJS();
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/topic","/queue");
+        config.enableSimpleBroker("/topic", "/queue");
         config.setApplicationDestinationPrefixes("/app");
         config.setUserDestinationPrefix("/user");
     }
-
 }
-
-
-
-
-
-
-
-
-
-

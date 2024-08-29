@@ -1,6 +1,7 @@
 package com.example._v1.mcq.game.services;
 
 import com.example._v1.mcq.game.DataTypes.Custom.Options;
+import com.example._v1.mcq.game.DataTypes.Custom.ParticipantInfo;
 import com.example._v1.mcq.game.DataTypes.Enums.Status;
 import com.example._v1.mcq.game.entity.Game;
 import com.example._v1.mcq.game.entity.Mcq;
@@ -8,16 +9,20 @@ import com.example._v1.mcq.game.respository.GameRepo;
 import com.example._v1.mcq.game.respository.McqRepo;
 import com.example._v1.mcq.game.utils.GameUpdateUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import com.example._v1.mcq.game.DataTypes.Custom.DeleteResult;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class GameService {
     private final GameRepo gameRepo;
     private final McqRepo mcqRepo;
+
     public Game addGame(Game game) {
         return gameRepo.save(game);
     }
@@ -46,23 +51,12 @@ public class GameService {
     }
 
     public List<Game> getAllGamesParticpntLessThan2() {
-        List<Game> games = new ArrayList<>();
         List<Game> allGames = gameRepo.findAll();
-        return allGames;
-//        for (Game game : allGames) {
-//            int size = 0;
-//            if (!game.getParticipants().isEmpty()) {
-//                size = game.getParticipants().size();
-//            }
-//
-//            if (size < 2) {
-//                games.add(game);
-//            }
-//        }
-//        return games;
+        log.info("allGames: "+ allGames);
+        return allGames.stream()
+                .filter(game -> game.getParticipants().size() < 2)
+                .collect(Collectors.toList());
     }
-
-
     public Game getGame(String id) {
         return gameRepo.findById(id).orElse(null);
     }
@@ -77,57 +71,81 @@ public class GameService {
             return null;
         }
 
-        // Update player's score
-        Map<String, Integer> scores = game.getScores();
-        if (scores == null) {
-            scores = new HashMap<>();
-            game.setScores(scores);
-        }
-        Mcq question = mcqRepo.findById(questionId).orElse(null);
-        if (question != null && question.isCorrectAnswer(answer)) {
-            scores.put(playerId, scores.getOrDefault(playerId, 0) + 1);
-        }
+        // Find the participant
+        Optional<ParticipantInfo> participantOpt = game.getParticipants().stream()
+                .filter(p -> p.getParticipantId().equals(playerId))
+                .findFirst();
 
-        // Move to next question
-        game.setCurrentQuestionIndex(game.getCurrentQuestionIndex() + 1);
+        if (participantOpt.isPresent()) {
+            ParticipantInfo participant = participantOpt.get();
 
-        // Check if game is over
-        List<Mcq> mcqs = mcqRepo.findByGameId(gameId);
-        if (game.getCurrentQuestionIndex() >= mcqs.size()) {
-            game.setStatus(Status.Completed);
-            determineWinner(game);
+            // Update player's score
+            Mcq question = mcqRepo.findById(questionId).orElse(null);
+            log.info("question: "+ question);
+            if (question != null && isCorrectAnswer(answer,question.getCorrectOptions(),question.getListOfOptions())) {
+                log.info("inside update game score");
+                log.info("answer: " + answer);
+                participant.setScores(participant.getScores() + 1);
+            }
+
+            // Move to next question
+            participant.setCurrentQuestionIndex(participant.getCurrentQuestionIndex() + 1);
+
+            // Check if game is over for this participant
+            List<Mcq> mcqs = mcqRepo.findByGameId(gameId);
+            if (participant.getCurrentQuestionIndex() >= mcqs.size()) {
+                // This participant has finished
+                // Check if all participants have finished
+                boolean allFinished = game.getParticipants().stream()
+                        .allMatch(p -> p.getCurrentQuestionIndex() >= mcqs.size());
+                if (allFinished) {
+                    game.setStatus(Status.Completed);
+                    determineWinner(game);
+                }
+            }
         }
 
         return updateGame(game);
     }
-    public Mcq getNextQuestion(String gameId) {
+    public Mcq getNextQuestion(String gameId,String participantId) {
         Game game = getGame(gameId);
         if (game == null) {
             return null;
         }
-        List<Mcq> mcqs = mcqRepo.findByGameId(gameId);
-        if (game.getCurrentQuestionIndex() < mcqs.size()) {
-            return mcqs.get(game.getCurrentQuestionIndex());
+
+        Optional<ParticipantInfo> participantOpt = game.getParticipants().stream()
+                .filter(p -> p.getParticipantId().equals(participantId))
+                .findFirst();
+
+        if (participantOpt.isPresent()) {
+            ParticipantInfo participant = participantOpt.get();
+            List<Mcq> mcqs = mcqRepo.findByGameId(gameId);
+            if (participant.getCurrentQuestionIndex() < mcqs.size()) {
+                return mcqs.get(participant.getCurrentQuestionIndex());
+            }
         }
         return null;
     }
     private void determineWinner(Game game) {
-        Map<String, Integer> scores = game.getScores();
-        if (scores == null || scores.isEmpty()) {
-            return;
-        }
+        int maxScore = game.getParticipants().stream()
+                .mapToInt(ParticipantInfo::getScores)
+                .max()
+                .orElse(0);
 
-        int maxScore = Collections.max(scores.values());
-        List<String> winners = new ArrayList<>();
-
-        for (Map.Entry<String, Integer> entry : scores.entrySet()) {
-            if (entry.getValue() == maxScore) {
-                winners.add(entry.getKey());
-            }
-        }
-
-        game.setWinners(winners);
+        List<String> winners = game.getParticipants().stream()
+                .filter(p -> p.getScores() == maxScore)
+                .map(ParticipantInfo::getParticipantId)
+                .collect(Collectors.toList());
     }
 
+    private boolean isCorrectAnswer(String answer,List<Options> correctOptions,List<String> allOptions ) {
+        for (Options correctOption : correctOptions) {
+            int ind = correctOption.getOption();
+            if(answer.equals(allOptions.get(ind))) {
+                    return true;
+            }
+        }
+        return false;
+    }
 
 }

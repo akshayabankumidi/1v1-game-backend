@@ -1,7 +1,6 @@
 package com.example._v1.mcq.game.services;
 
 import com.example._v1.mcq.game.DataTypes.Custom.DeleteResult;
-import com.example._v1.mcq.game.entity.Game;
 import com.example._v1.mcq.game.entity.Mcq;
 import com.example._v1.mcq.game.respository.McqRepo;
 import com.example._v1.mcq.game.utils.McqUpdateUtil;
